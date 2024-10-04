@@ -23,7 +23,7 @@ void debug_bitmask(LL bitmask){
 u_int16_t check(LL bitmask, u_int16_t n, u_int16_t m, u_int16_t val[], u_int16_t pos[][33]){
     LL mask = 0;
     // debug_bitmask(bitmask);
-    for(u_int16_t i=0;i<n;i++){
+    for(u_int16_t i=0;i<m;i++){
         if(bitmask&(1<<i)){ // take this element
             u_int16_t j = 0;
             u_int16_t p;
@@ -81,18 +81,15 @@ int main (int argc, char *argv[]) {
     MPI_Bcast(val,33,MPI_UNSIGNED_SHORT,0,MPI_COMM_WORLD);
     MPI_Bcast(pos,33*33,MPI_UNSIGNED_SHORT,0,MPI_COMM_WORLD);
     // all worker do the job
-    LL total_size = 1ULL<<n;
-    LL chunk_size = total_size / cluster_size;
-    if (chunk_size == 0){
-        chunk_size = 1;
-    }
+    LL total_size = 1ULL<<m;
+    LL chunk_size = total_size / cluster_size + 1;
     LL current_bitmask = chunk_size * worker_id;
     LL end_bitmask;
     if(worker_id == cluster_size-1){
         end_bitmask = total_size;
     }
     else{
-        end_bitmask = current_bitmask + chunk_size;
+        end_bitmask = (worker_id+1)*chunk_size;
     }
 
     LL local_ans = 0;
@@ -104,7 +101,7 @@ int main (int argc, char *argv[]) {
     MPI_Reduce(&local_ans,&global_ans,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,0,MPI_COMM_WORLD);
 
     if (worker_id == 0){
-        printf("%llu\n",global_ans);
+        printf("%llu",global_ans);
     }
 
 
