@@ -38,10 +38,10 @@ void print_ids(std::vector<Point> points){
 
 #define COLLINEAR 0
 #define CLOCKWISE 1
-#define COUNTER_CLOCKWISE 2
+#define COUNTER_CLOCKWISE -1
 
 // orientation of 3 points
-u_int8_t orientation(Point p, Point q, Point r){
+u_int8_t orientation( Point p, Point q, Point r){
     int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
     if( val < 0) return COUNTER_CLOCKWISE;
     if ( val > 0) return CLOCKWISE;
@@ -119,33 +119,100 @@ int find_leftmost_point(const std::vector<Point>& hull) {
 }
 
 // Merge two convex hulls in a clockwise direction
-std::vector<Point> merge_hulls(const std::vector<Point>& hull1, const std::vector<Point>& hull2) {
+std::vector<Point> merge_hulls(const std::vector<Point>& left_hull, const std::vector<Point>& right_hull) {
     std::vector<Point> merged_hull;
+    printf("merge_hulls\n");
+    print_ids(left_hull);
+    print_ids(right_hull);
+    printf("----------------\n");
 
-    // Get rightmost point of the first hull and leftmost point of the second hull
-    int rightmost1 = find_rightmost_point(hull1);
-    int leftmost2 = find_leftmost_point(hull2);
+    int left_hull_size = left_hull.size();
+    int right_hull_size = right_hull.size();
 
-    // Add upper hull from hull1 (left to right)
-    for (int i = 0; i <= rightmost1; ++i) {
-        merged_hull.push_back(hull1[i]);
+    int left_hull_leftmost_idx = find_leftmost_point(left_hull);
+    int left_hull_rightmost_idx = find_rightmost_point(left_hull);
+    int right_hull_leftmost_idx = find_leftmost_point(right_hull);
+    int right_hull_rightmost_idx = find_rightmost_point(right_hull);
+
+    int cur_left_idx = left_hull_rightmost_idx;
+    int cur_right_idx = right_hull_leftmost_idx;
+    // find the upper tangent
+    bool left_done = false;
+    bool right_done = false;
+    while (!left_done || !right_done) {
+        int left_next_idx = (cur_left_idx + 1) % left_hull_size;
+        int left_val = cross_product(left_hull[cur_left_idx],right_hull[cur_right_idx], left_hull[left_next_idx]);
+
+        if(left_val <= 0){
+            cur_left_idx = left_next_idx;
+            left_done = false;
+        }
+        else{
+            left_done = true;
+        }
+
+        int right_next_idx = (cur_right_idx - 1 + right_hull_size) % right_hull_size;
+        int right_val = cross_product(right_hull[cur_right_idx],left_hull[cur_left_idx], right_hull[right_next_idx]);
+
+        if(right_val >= 0){
+            cur_right_idx = right_next_idx;
+            right_done = false;
+        }
+        else{
+            right_done = true;
+        }
     }
+    int left_hull_upper_tangent_idx = cur_left_idx;
+    int right_hull_upper_tangent_idx = cur_right_idx;
+    // find the lower tangent
+    cur_left_idx = left_hull_rightmost_idx;
+    cur_right_idx = right_hull_leftmost_idx;
+    left_done = false;
+    right_done = false;
+    while (!left_done || !right_done) {
+        int left_next_idx = (cur_left_idx - 1 + left_hull_size) % left_hull_size;
+        int left_val = cross_product(left_hull[cur_left_idx],right_hull[cur_right_idx],  left_hull[left_next_idx]);
 
-    // Add upper hull from hull2 (left to right)
-    for (int i = leftmost2; i < hull2.size(); ++i) {
-        merged_hull.push_back(hull2[i]);
+        if(left_val >= 0){
+            cur_left_idx = left_next_idx;
+            left_done = false;
+        }
+        else{
+            left_done = true;
+        }
+
+        int right_next_idx = (cur_right_idx + 1) % right_hull_size;
+        int right_val = cross_product( right_hull[cur_right_idx],left_hull[cur_left_idx], right_hull[right_next_idx]);
+
+        if(right_val <= 0){
+            cur_right_idx = right_next_idx;
+            right_done = false;
+        }
+        else{
+            right_done = true;
+        }
     }
+    int left_hull_lower_tangent_idx = cur_left_idx;
+    int right_hull_lower_tangent_idx = cur_right_idx;
+    // merge the two hulls
+    printf("left_hull_leftmost_id = %d\n",left_hull[left_hull_leftmost_idx].id);
+    printf("left_hull_rightmost_id = %d\n",left_hull[left_hull_rightmost_idx].id);
 
-    // Add lower hull from hull2 (right to left)
-    for (int i = leftmost2 - 1; i >= 0; --i) {
-        merged_hull.push_back(hull2[i]);
-    }
+    printf("left_hull_upper_tangent_id = %d\n",left_hull[left_hull_upper_tangent_idx].id);
+    printf("left_hull_lower_tangent_id = %d\n",left_hull[left_hull_lower_tangent_idx].id);
 
-    // Add lower hull from hull1 (right to left)
-    for (int i = rightmost1 + 1; i < hull1.size(); ++i) {
-        merged_hull.push_back(hull1[i]);
-    }
+    printf("right_hull_leftmost_id = %d\n",right_hull[right_hull_leftmost_idx].id);
+    printf("right_hull_rightmost_id = %d\n",right_hull[right_hull_rightmost_idx].id);
 
+    printf("right_hull_upper_tangent_id = %d\n",right_hull[right_hull_upper_tangent_idx].id);
+    printf("right_hull_lower_tangent_id = %d\n",right_hull[right_hull_lower_tangent_idx].id);
+
+    // add the left hull from leftmost to upper tangent
+    // swap(left_hull_upper_tangent_idx,left_hull_lower_tangent_idx);
+    // for (int i = left_hull_leftmost_idx; i != left_hull_upper_tangent_idx; i = (i + 1) % left_hull_size) {
+    //     merged_hull.push_back(left_hull[i]);
+    // }
+    
     return merged_hull;
 }
 
@@ -200,6 +267,12 @@ int main(int argc, char *argv[]){
             fscanf(fp,"%d %d",&points[i].x,&points[i].y);
             points[i].id = i+1;
         }
+        fclose(fp);
+
+        // sort the points
+        std::sort(points.begin(),points.begin()+n,[](Point p1,Point p2){
+            return p1.x < p2.x || (p1.x == p2.x && p1.y < p2.y);
+        });
     }
     // broadcast data
     MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
