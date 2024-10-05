@@ -40,23 +40,6 @@ void print_ids(std::vector<Point> points){
 #define CLOCKWISE 1
 #define COUNTER_CLOCKWISE -1
 
-// orientation of 3 points
-u_int8_t orientation( Point p, Point q, Point r){
-    int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
-    if( val < 0) return COUNTER_CLOCKWISE;
-    if ( val > 0) return CLOCKWISE;
-    return COLLINEAR;
-}
-
-// compare 2 points with respect to pivot
-bool compare(Point p1, Point p2, Point pivot){
-    int o = orientation(pivot, p1, p2);
-    if (o == COLLINEAR)
-        return (std::sqrt((p1.x - pivot.x)*(p1.x - pivot.x) + (p1.y - pivot.y)*(p1.y - pivot.y)) <
-                std::sqrt((p2.x - pivot.x)*(p2.x - pivot.x) + (p2.y - pivot.y)*(p2.y - pivot.y)));
-    return (o == CLOCKWISE); // clockwise sort
-}
-
 // Helper function to compute the cross product of two vectors
 int cross_product(const Point& p1, const Point& p2, const Point& p3) {
     return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
@@ -90,8 +73,6 @@ std::vector<Point> get_convex_hull(std::vector<Point> &points){
         hull.push_back(lower_hull[i]);
     }
 
-    printf("get_convex_hull\n");
-    print_ids(hull);
     return hull;
 }
 
@@ -121,10 +102,10 @@ int find_leftmost_point(const std::vector<Point>& hull) {
 // Merge two convex hulls in a clockwise direction
 std::vector<Point> merge_hulls(const std::vector<Point>& left_hull, const std::vector<Point>& right_hull) {
     std::vector<Point> merged_hull;
-    printf("merge_hulls\n");
-    print_ids(left_hull);
-    print_ids(right_hull);
-    printf("----------------\n");
+    // printf("merge_hulls\n");
+    // print_ids(left_hull);
+    // print_ids(right_hull);
+    // printf("----------------\n");
 
     int left_hull_size = left_hull.size();
     int right_hull_size = right_hull.size();
@@ -136,7 +117,7 @@ std::vector<Point> merge_hulls(const std::vector<Point>& left_hull, const std::v
 
     int cur_left_idx = left_hull_rightmost_idx;
     int cur_right_idx = right_hull_leftmost_idx;
-    // find the upper tangent
+    // find the lower tangent
     bool left_done = false;
     bool right_done = false;
     while (!left_done || !right_done) {
@@ -162,9 +143,9 @@ std::vector<Point> merge_hulls(const std::vector<Point>& left_hull, const std::v
             right_done = true;
         }
     }
-    int left_hull_upper_tangent_idx = cur_left_idx;
-    int right_hull_upper_tangent_idx = cur_right_idx;
-    // find the lower tangent
+    int left_hull_lower_tangent_idx = cur_left_idx;
+    int right_hull_lower_tangent_idx = cur_right_idx;
+    // find the upper tangent
     cur_left_idx = left_hull_rightmost_idx;
     cur_right_idx = right_hull_leftmost_idx;
     left_done = false;
@@ -192,27 +173,35 @@ std::vector<Point> merge_hulls(const std::vector<Point>& left_hull, const std::v
             right_done = true;
         }
     }
-    int left_hull_lower_tangent_idx = cur_left_idx;
-    int right_hull_lower_tangent_idx = cur_right_idx;
+    int left_hull_upper_tangent_idx = cur_left_idx;
+    int right_hull_upper_tangent_idx = cur_right_idx;
     // merge the two hulls
-    printf("left_hull_leftmost_id = %d\n",left_hull[left_hull_leftmost_idx].id);
-    printf("left_hull_rightmost_id = %d\n",left_hull[left_hull_rightmost_idx].id);
+    // printf("left_hull_leftmost_id = %d\n",left_hull[left_hull_leftmost_idx].id);
+    // printf("left_hull_rightmost_id = %d\n",left_hull[left_hull_rightmost_idx].id);
 
-    printf("left_hull_upper_tangent_id = %d\n",left_hull[left_hull_upper_tangent_idx].id);
-    printf("left_hull_lower_tangent_id = %d\n",left_hull[left_hull_lower_tangent_idx].id);
+    // printf("left_hull_upper_tangent_id = %d\n",left_hull[left_hull_upper_tangent_idx].id);
+    // printf("left_hull_lower_tangent_id = %d\n",left_hull[left_hull_lower_tangent_idx].id);
 
-    printf("right_hull_leftmost_id = %d\n",right_hull[right_hull_leftmost_idx].id);
-    printf("right_hull_rightmost_id = %d\n",right_hull[right_hull_rightmost_idx].id);
+    // printf("right_hull_leftmost_id = %d\n",right_hull[right_hull_leftmost_idx].id);
+    // printf("right_hull_rightmost_id = %d\n",right_hull[right_hull_rightmost_idx].id);
 
-    printf("right_hull_upper_tangent_id = %d\n",right_hull[right_hull_upper_tangent_idx].id);
-    printf("right_hull_lower_tangent_id = %d\n",right_hull[right_hull_lower_tangent_idx].id);
+    // printf("right_hull_upper_tangent_id = %d\n",right_hull[right_hull_upper_tangent_idx].id);
+    // printf("right_hull_lower_tangent_id = %d\n",right_hull[right_hull_lower_tangent_idx].id);
 
-    // add the left hull from leftmost to upper tangent
-    // swap(left_hull_upper_tangent_idx,left_hull_lower_tangent_idx);
-    // for (int i = left_hull_leftmost_idx; i != left_hull_upper_tangent_idx; i = (i + 1) % left_hull_size) {
-    //     merged_hull.push_back(left_hull[i]);
-    // }
-    
+    // top left
+    for(int i=left_hull_leftmost_idx;i!=left_hull_upper_tangent_idx;i=(i+1)%left_hull_size){
+        merged_hull.push_back(left_hull[i]);
+    }
+    merged_hull.push_back(left_hull[left_hull_upper_tangent_idx]);
+    // top right to bottom right
+    for(int i=right_hull_upper_tangent_idx;i!=right_hull_lower_tangent_idx;i=(i+1)%right_hull_size){
+        merged_hull.push_back(right_hull[i]);
+    }
+    merged_hull.push_back(right_hull[right_hull_lower_tangent_idx]);
+    // bottom left
+    for(int i=left_hull_lower_tangent_idx;i!=left_hull_leftmost_idx;i=(i+1)%left_hull_size){
+        merged_hull.push_back(left_hull[i]);
+    }
     return merged_hull;
 }
 
@@ -282,10 +271,6 @@ int main(int argc, char *argv[]){
     int start = worker_id * chunk_size;
     int end = (worker_id == cluster_size-1)? n: start + chunk_size;
 
-    dbg(worker_id);
-    dbg(start);
-    dbg(end);
-    dbg(points.size());
     // graham scan
     std::vector<Point> local_subset(points.begin()+start,points.begin()+end);
     std::vector<Point> local_hull = get_convex_hull(local_subset);
@@ -296,12 +281,7 @@ int main(int argc, char *argv[]){
         for(int i=1;i<cluster_size;i++){
             std::vector<Point> recv_hull(chunk_size);
             MPI_Recv(recv_hull.data(),chunk_size,MPI_POINT_TYPE,i,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            print_ids(local_hull);
             remove_padding(recv_hull);
-
-            dbg(worker_id);
-            print_points(local_hull);
-            print_points(global_hull);
             global_hull = merge_hulls(global_hull,recv_hull);
         }
     }
@@ -316,9 +296,9 @@ int main(int argc, char *argv[]){
         for(auto p: global_hull){
             printf("%d ",p.id);
         }
-        printf("\n");
     }
 
+    MPI_Type_free(&MPI_POINT_TYPE);
     MPI_Finalize();
     return 0;
 }
