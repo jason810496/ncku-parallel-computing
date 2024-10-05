@@ -5,7 +5,7 @@ v := 1
 
 all: $(TARGET)
 
-$(TARGET):F74116720_hw1_2.cpppp
+$(TARGET):F74116720_hw1_2.cpp
 	$(CC) -o $@ $^
 
 judge: all
