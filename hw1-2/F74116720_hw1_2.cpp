@@ -83,16 +83,16 @@ int main(int argc, char *argv[]){
     int n;
     int cluster_size;
     int worker_id;
-    std::vector<Point> points;
+    std::vector<Point> points(MAX_N);
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &cluster_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &worker_id);
 
     // MPI Data Type
-    MPI_Datatype MPI_POINT;
-    MPI_Type_contiguous(3,MPI_INT,&MPI_POINT);
-    MPI_Type_commit(&MPI_POINT);
+    MPI_Datatype MPI_POINT_TYPE;
+    MPI_Type_contiguous(3,MPI_INT,&MPI_POINT_TYPE);
+    MPI_Type_commit(&MPI_POINT_TYPE);
 
     // input
     if(worker_id == 0){
@@ -106,7 +106,6 @@ int main(int argc, char *argv[]){
         }
         // read n
         fscanf(fp,"%d",&n);
-        points.resize(n);
         for(int i=0;i<n;i++){
             fscanf(fp,"%d %d",&points[i].x,&points[i].y);
             points[i].id = i+1;
@@ -114,7 +113,7 @@ int main(int argc, char *argv[]){
     }
     // broadcast data
     MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
-    MPI_Bcast(points.data(),n,MPI_POINT,0,MPI_COMM_WORLD);
+    MPI_Bcast(points.data(),n,MPI_POINT_TYPE,0,MPI_COMM_WORLD);
     // divide the load
     int chunk_size = n / cluster_size;
     int start = worker_id * chunk_size;
