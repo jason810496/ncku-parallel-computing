@@ -3,6 +3,7 @@
 #include<vector>
 #include<algorithm>
 #include<cmath>
+#include<utility>
 
 #define MAX_N 15000
 #define LL unsigned long long
@@ -19,6 +20,22 @@ struct Point{
     Point(){}
 };
 
+
+// debug print
+void print_points(std::vector<Point> points){
+    for(auto p: points){
+        printf("(%d,%d) ",p.x,p.y);
+    }
+    printf("\n");
+}
+
+void print_ids(std::vector<Point> points){
+    for(auto p: points){
+        printf("%d ",p.id);
+    }
+    printf("\n");
+}
+
 #define COLLINEAR 0
 #define CLOCKWISE 1
 #define COUNTER_CLOCKWISE 2
@@ -26,57 +43,130 @@ struct Point{
 // orientation of 3 points
 u_int8_t orientation(Point p, Point q, Point r){
     int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
-    if(val == 0) return COLLINEAR;
-    return (val > 0)? CLOCKWISE: COUNTER_CLOCKWISE;
+    if( val < 0) return COUNTER_CLOCKWISE;
+    if ( val > 0) return CLOCKWISE;
+    return COLLINEAR;
 }
 
 // compare 2 points with respect to pivot
 bool compare(Point p1, Point p2, Point pivot){
-    u_int8_t o = orientation(pivot,p1,p2);
-    if(o == COLLINEAR){
-        return (std::sqrt(std::pow(pivot.x-p1.x,2) + std::pow(pivot.y-p1.y,2)) >= std::sqrt(std::pow(pivot.x-p2.x,2) + std::pow(pivot.y-p2.y,2)));
-    }
-    return o == CLOCKWISE;
+    int o = orientation(pivot, p1, p2);
+    if (o == COLLINEAR)
+        return (std::sqrt((p1.x - pivot.x)*(p1.x - pivot.x) + (p1.y - pivot.y)*(p1.y - pivot.y)) <
+                std::sqrt((p2.x - pivot.x)*(p2.x - pivot.x) + (p2.y - pivot.y)*(p2.y - pivot.y)));
+    return (o == CLOCKWISE); // clockwise sort
 }
 
-// graham scan
-std::vector<Point> graham_scan(std::vector<Point> points){
+// Helper function to compute the cross product of two vectors
+int cross_product(const Point& p1, const Point& p2, const Point& p3) {
+    return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+}
+
+std::vector<Point> get_convex_hull(std::vector<Point> &points){
+    // Andrew monotone chain
     int n = points.size();
-    if(n < 3) return {};
-
-    // find the bottommost point
-    Point pivot = *std::min_element(points.begin(),points.end(),[](Point p1, Point p2){
-        return (p1.y < p2.y) || (p1.y == p2.y && p1.x < p2.x);
+    sort(points.begin(),points.end(),[](Point p1,Point p2){
+        return p1.x < p2.x || (p1.x == p2.x && p1.y < p2.y);
     });
 
-    // sort the points based on polar angle
-    std::sort(points.begin(),points.end(),[pivot](Point p1, Point p2){
-        return compare(p1,p2,pivot);
-    });
-
-    std::vector<Point> hull;
-    hull.push_back(points[0]);
-    hull.push_back(points[1]);
-    hull.push_back(points[2]);
-
-    for(int i=3;i<n;i++){
-        while(orientation(hull[hull.size()-2],hull[hull.size()-1],points[i]) != COUNTER_CLOCKWISE){
-            hull.pop_back();
+    std::vector<Point> hull,lower_hull,upper_hull;
+    
+    for(int i=0;i<n;i++){
+        while(lower_hull.size() >= 2 && cross_product(lower_hull[lower_hull.size()-2],lower_hull[lower_hull.size()-1],points[i]) <= 0){
+            lower_hull.pop_back();
         }
-        hull.push_back(points[i]);
+        while (upper_hull.size() >= 2 && cross_product(upper_hull[upper_hull.size()-2],upper_hull[upper_hull.size()-1],points[i]) >= 0){
+            upper_hull.pop_back();
+        }
+        lower_hull.push_back(points[i]);
+        upper_hull.push_back(points[i]);
+    }
+    // merge the lower and upper hulls
+    // hull = upper_hull from left to right + lower_hull from right to left
+    for(int i=0;i<upper_hull.size();i++){
+        hull.push_back(upper_hull[i]);
+    }
+    for(int i=lower_hull.size()-2;i>0;i--){ // don't include the first and last point
+        hull.push_back(lower_hull[i]);
     }
 
+    printf("get_convex_hull\n");
+    print_ids(hull);
     return hull;
 }
 
-// merge 2 convex hulls
-std::vector<Point> merge_hulls(std::vector<Point>& hull1, std::vector<Point>& hull2) {
-    // Combine the points from both hulls and compute the convex hull of the union
-    std::vector<Point> all_points = hull1;
-    all_points.insert(all_points.end(), hull2.begin(), hull2.end());
-    return graham_scan(all_points);
+
+// Finds the index of the rightmost point in the hull
+int find_rightmost_point(const std::vector<Point>& hull) {
+    int idx = 0;
+    for (int i = 1; i < hull.size(); i++) {
+        if (hull[i].x > hull[idx].x || (hull[i].x == hull[idx].x && hull[i].y > hull[idx].y)) {
+            idx = i;
+        }
+    }
+    return idx;
 }
 
+// Finds the index of the leftmost point in the hull
+int find_leftmost_point(const std::vector<Point>& hull) {
+    int idx = 0;
+    for (int i = 1; i < hull.size(); i++) {
+        if (hull[i].x < hull[idx].x || (hull[i].x == hull[idx].x && hull[i].y < hull[idx].y)) {
+            idx = i;
+        }
+    }
+    return idx;
+}
+
+// Merge two convex hulls in a clockwise direction
+std::vector<Point> merge_hulls(const std::vector<Point>& hull1, const std::vector<Point>& hull2) {
+    std::vector<Point> merged_hull;
+
+    // Get rightmost point of the first hull and leftmost point of the second hull
+    int rightmost1 = find_rightmost_point(hull1);
+    int leftmost2 = find_leftmost_point(hull2);
+
+    // Add upper hull from hull1 (left to right)
+    for (int i = 0; i <= rightmost1; ++i) {
+        merged_hull.push_back(hull1[i]);
+    }
+
+    // Add upper hull from hull2 (left to right)
+    for (int i = leftmost2; i < hull2.size(); ++i) {
+        merged_hull.push_back(hull2[i]);
+    }
+
+    // Add lower hull from hull2 (right to left)
+    for (int i = leftmost2 - 1; i >= 0; --i) {
+        merged_hull.push_back(hull2[i]);
+    }
+
+    // Add lower hull from hull1 (right to left)
+    for (int i = rightmost1 + 1; i < hull1.size(); ++i) {
+        merged_hull.push_back(hull1[i]);
+    }
+
+    return merged_hull;
+}
+
+#define INT_MAX 2147483647
+// add padding to the points
+void add_padding(std::vector<Point>& points, int chunk_size){
+    int n = points.size();
+    int padding = chunk_size - n;
+    while(padding--){
+        points.push_back(Point(INT_MAX,INT_MAX,INT_MAX));
+    }
+}
+
+// remove padding from the points
+void remove_padding(std::vector<Point>& points){
+    int idx = points.size()-1;
+    while(points[idx].x == INT_MAX){
+        points.pop_back();
+        idx--;
+    }
+}
 
 
 int main(int argc, char *argv[]){
@@ -124,19 +214,29 @@ int main(int argc, char *argv[]){
     dbg(end);
     dbg(points.size());
     // graham scan
-    std::vector<Point> local_hull = graham_scan(std::vector<Point>(points.begin()+start,points.begin()+end));
+    std::vector<Point> local_subset(points.begin()+start,points.begin()+end);
+    std::vector<Point> local_hull = get_convex_hull(local_subset);
     // merge hulls
     std::vector<Point> global_hull;
     if(worker_id == 0){
         global_hull = local_hull;
         for(int i=1;i<cluster_size;i++){
             std::vector<Point> recv_hull(chunk_size);
-            MPI_Recv(recv_hull.data(),chunk_size*sizeof(Point),MPI_BYTE,i,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            MPI_Recv(recv_hull.data(),chunk_size,MPI_POINT_TYPE,i,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            print_ids(local_hull);
+            remove_padding(recv_hull);
+
+            dbg(worker_id);
+            print_points(local_hull);
+            print_points(global_hull);
             global_hull = merge_hulls(global_hull,recv_hull);
         }
     }
     else{
-        MPI_Send(local_hull.data(),local_hull.size()*sizeof(Point),MPI_BYTE,0,0,MPI_COMM_WORLD);
+        if(local_hull.size() < chunk_size){
+            add_padding(local_hull,chunk_size);
+        }
+        MPI_Send(local_hull.data(),chunk_size,MPI_POINT_TYPE,0,0,MPI_COMM_WORLD);
     }
     // print the result
     if(worker_id == 0){
