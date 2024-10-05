@@ -37,3 +37,10 @@ ifndef CMD
 endif
 	ssh ncku-parallel 'cd ~/$(HW) && $(CMD)'
 .PHONY: exe
+
+github-repo:
+ifndef HW
+	$(error HW is not set)
+endif
+	cp -r $(HW)/* $(HW)-$(USER)
+.PHONY: github-repo
