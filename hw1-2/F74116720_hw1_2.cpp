@@ -41,8 +41,8 @@ void print_ids(std::vector<Point> points){
 #define COUNTER_CLOCKWISE -1
 
 // Helper function to compute the cross product of two vectors
-int cross_product(const Point& p1, const Point& p2, const Point& p3) {
-    return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+long long cross_product(const Point& p1, const Point& p2, const Point& p3) {
+    return (long long)(p2.x - p1.x) * (long long)(p3.y - p1.y) - (long long)(p2.y - p1.y) * (long long)(p3.x - p1.x);
 }
 
 std::vector<Point> get_convex_hull(std::vector<Point> &points){
