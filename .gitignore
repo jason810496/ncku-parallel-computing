@@ -33,3 +33,7 @@
 
 # Homework
 *.zip
+
+# Python
+venv/
+__pycache__/
