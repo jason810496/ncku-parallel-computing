@@ -38,6 +38,15 @@ endif
 	ssh ncku-parallel 'cd ~/$(HW) && $(CMD)'
 .PHONY: exe
 
+all:
+ifndef HW
+	$(error HW is not set)
+endif
+	first_input_file=$(shell ls $(HW)/input/filename | head -n 1)
+	scp $(HW)/$(STUDENT)_$(subst -,_,$(HW)).cpp ncku-parallel:~/$(HW)
+	ssh ncku-parallel 'cd ~/$(HW) && make && mpiexec -n 8 ./$(subst -,_,$(HW)) < ./input/filename/$(shell ls $(HW)/input/filename | head -n 1)'
+
+
 github-repo:
 ifndef HW
 	$(error HW is not set)
