@@ -10,40 +10,49 @@ O(n^2) Dijkstra's algorithm with MPI
 #include<queue>
 #include<string.h>
 
-#define MAX_N 50001
-#define MAX_N_2 50001L*50001L
+#define MAX_N 1500L
+#define MAX_N_2 MAX_N*MAX_N
 #define F first
 #define S second
 #define INF 1e9
 
 #define min(a,b) ((a)<(b)?(a):(b))
 
-void dijksra(int start_node,int end_node,short graph[MAX_N][MAX_N],int local_dis[MAX_N]){
-    std::priority_queue<std::pair<int,int>,std::vector<std::pair<int,int>>,std::greater<std::pair<int,int>>> pq;
-    pq.push({0,start_node});
-    while(!pq.empty()){
-        auto [d,u] = pq.top();
-        pq.pop();
-        if(d > local_dis[u]) continue;
-        for(int v=0;v<MAX_N;v++){
-            if(graph[u][v] == 0) continue;
-            if(local_dis[v] > local_dis[u] + graph[u][v]){
-                local_dis[v] = local_dis[u] + graph[u][v];
-                pq.push({local_dis[v],v});
-            }
-        }
-    }
+short graph[MAX_N][MAX_N];
+int dis[MAX_N];
+
+struct Message{
+    int start_node;
+    int end_node;
+    int from;
+
+    Message(int start_node,int end_node,int from):start_node(start_node),end_node(end_node),from(from){}
+    Message(){}
+};
+
+Message create_message(int n,int worker_size,int worker_id,int from){
+    int chunk_size = n / worker_size;
+    int start = worker_id * chunk_size;
+    int end = (worker_id == worker_size-1 ? n: start + chunk_size);
+    printf("create msg: start = %d, end = %d, from = %d\n",start,end,from);
+    return Message(start,end,from);
 }
 
+Message create_exit_message(){
+    return Message(-1,-1,-1);
+}
 
 int main(int argc, char *argv[]){
     int n;
     int cluster_size;
     int worker_id;
-    short graph[MAX_N][MAX_N];
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &cluster_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &worker_id);
+
+    MPI_Datatype MPI_MESSAGE_TYPE;
+    MPI_Type_contiguous(2,MPI_INT,&MPI_MESSAGE_TYPE);
+    MPI_Type_commit(&MPI_MESSAGE_TYPE);
 
     // input
     if(worker_id == 0){
@@ -63,58 +72,125 @@ int main(int argc, char *argv[]){
             graph[from][to] = weight;
         }
         fclose(fp);
-        // init data
-        memset(graph,0,sizeof(graph));
+        // init dis
+        for(int i=0;i<n;i++){
+            dis[i] = INF;
+        }
+        dis[0] = 0;
     }
     // broadcast data
     MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
-    // MPI_Bcast(graph,MAX_N_2,MPI_SHORT,0,MPI_COMM_WORLD);
+    MPI_Bcast(graph,MAX_N_2,MPI_SHORT,0,MPI_COMM_WORLD);
+    MPI_Bcast(dis,MAX_N,MPI_INT,0,MPI_COMM_WORLD);
     // divide the load
-    int chunk_size = n / cluster_size;
-    int start = worker_id * chunk_size;
-    int end = (worker_id == cluster_size-1)? n: start + chunk_size;
+    int worker_size = cluster_size - 1;
+    int chunk_size = n / worker_size;
 
-    // init local_dis for all workers
-    int local_dis[MAX_N];
-    for(int i=0;i<n;i++){
-        local_dis[i] = INF;
-    }
-    local_dis[0] = 0;
-    dijksra(start,end,graph,local_dis);
-    // global result
-    int global_dis[MAX_N];
-
-    // Dijkstra
-    if( worker_id == 0 ){
-        // init global_dis
-        for(int i=0;i<n;i++){
-            global_dis[i] = INF;
-        }
-        global_dis[0] = 0;
-        // self result
-        for(int i=0;i<n;i++){
-            global_dis[i] = min(global_dis[i],local_dis[i]);
-        }
-        // merge the results 
-        for(int i=1;i<cluster_size;i++){
-            short recv_dis[MAX_N];
-            MPI_Recv(recv_dis,MAX_N,MPI_SHORT,i,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            for(int j=0;j<n;j++){
-                global_dis[j] = min(global_dis[j],recv_dis[j]);
+    // init dis
+    if( worker_id == 0){
+        // dijkstra
+        std::priority_queue<std::pair<int,int>,std::vector<std::pair<int,int>>,std::greater<std::pair<int,int>>> pq;
+        pq.push({0,0});
+        while(!pq.empty()){
+            std::pair<int,int> pii = pq.top();
+            pq.pop();
+            int u = pii.S;
+            int d = pii.F;
+            printf("u = %d, d = %d\n",u,d);
+            if(d > dis[u]) continue;
+            // distribute the work to other workers
+            /*original*/
+            /*
+            for(int v=0;v<MAX_N;v++){
+                if(graph[u][v] == 0) continue;
+                if(local_dis[v] > local_dis[u] + graph[u][v]){
+                    local_dis[v] = local_dis[u] + graph[u][v];
+                    pq.push({local_dis[v],v});
+                }
             }
+            */
+           
+           std::vector<Message> msgs(worker_size);
+           for(int ith_worker=0;ith_worker<worker_size;ith_worker++){
+                msgs[ith_worker] = create_message(n,worker_size,ith_worker,u);
+                MPI_Send(&msgs[ith_worker],1,MPI_MESSAGE_TYPE,ith_worker+1,0,MPI_COMM_WORLD);
+                MPI_Send(dis,MAX_N,MPI_INT,ith_worker+1,0,MPI_COMM_WORLD);
+           }
+
+            std::vector<int> recv_dis(MAX_N);
+            for(int ith_worker=0;ith_worker<worker_size;ith_worker++){
+                printf("coordinator waiting %d\n",ith_worker+1);
+                MPI_Recv(recv_dis.data(),MAX_N,MPI_INT,ith_worker+1,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+                printf("coordinator recv from %d\n",ith_worker+1);
+                for(int v=msgs[ith_worker].start_node;v<msgs[ith_worker].end_node;v++){
+                    // printf("v = %d, recv_dis = %d, dis = %d\n",v,recv_dis[v],dis[v]);
+                    if(dis[v] > recv_dis[v]){
+                        dis[v] = recv_dis[v];
+                        printf("coordinator: push %d %d\n",dis[v],v);
+                        pq.push({dis[v],v});
+                    }
+                }
+            }
+            printf("coordinator: pq size = %ld\n",pq.size());
+           
+            // update dis
+            // MPI_Bcast(dis,MAX_N,MPI_INT,0,MPI_COMM_WORLD);
+
+            printf("coordinator: broadcast done\n");
+            
         }
+        printf("coordinator: dijkstra done\n");
+
+        // send exit message after the dijkstra is done
+        for(int ith_worker=0;ith_worker<worker_size;ith_worker++){
+            Message msg = create_exit_message();
+            MPI_Send(&msg,1,MPI_MESSAGE_TYPE,ith_worker+1,0,MPI_COMM_WORLD);
+        }
+
+        printf("coordinator: exit message sent\n");
     }
-    else{
-        // send the results to the worker 0
-        MPI_Send(local_dis,MAX_N,MPI_SHORT,0,0,MPI_COMM_WORLD);
+    else{ // workers
+        while(true){
+            std::vector<int> local_min(MAX_N);
+            // for(int i=0;i<MAX_N;i++){
+            //     local_min[i] = dis[i];
+            // }
+            Message msg;
+
+            printf("worker %d: waiting\n",worker_id);
+            MPI_Recv(&msg,1,MPI_MESSAGE_TYPE,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            MPI_Recv(local_min.data(),MAX_N,MPI_INT,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            printf("worker %d: start = %d, end = %d, from = %d\n",worker_id,msg.start_node,msg.end_node,msg.from);
+            if(msg.start_node == -1 || msg.end_node == -1 || msg.from == -1){
+                break;
+            }
+
+            int from = msg.from;
+            for(int v=msg.start_node;v<msg.end_node;v++){
+                if(graph[from][v] == 0) continue;
+                printf("worker %d: from = %d, v = %d, local_min = %d, graph = %d, local_min + graph = %d\n",worker_id,from,v,local_min[from],graph[from][v],local_min[from] + graph[from][v]);
+                if(local_min[v] > local_min[from] + graph[from][v]){
+                    printf("worker %d find %d %d %d\n",worker_id,local_min[from],graph[from][v],local_min[from] + graph[from][v]);
+                    local_min[v] = local_min[from] + graph[from][v];
+                }
+            }
+            MPI_Send(local_min.data(),MAX_N,MPI_INT,0,0,MPI_COMM_WORLD);
+            printf("worker %d: send to coordinator\n",worker_id);
+
+        }
+        printf("worker %d: exit\n",worker_id);
     }
 
     // print the result
     if(worker_id == 0){
+        printf("dis\n");
         for(int i=0;i<n;i++){
-            printf("%d ",global_dis[i]);
+            printf("%d ",dis[i]);
         }
     }
+
+    MPI_Type_free(&MPI_MESSAGE_TYPE);
+    MPI_Finalize();
 
     return 0;
 }
