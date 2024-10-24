@@ -11,11 +11,14 @@ O(n^2) Dijkstra's algorithm with MPI
 #include<string.h>
 
 #define MAX_N 50001
+#define MAX_N_2 50001L*50001L
 #define F first
 #define S second
 #define INF 1e9
 
-void dijksra(int start_node,int end_node,short graph[MAX_N][MAX_N],short local_dis[MAX_N]){
+#define min(a,b) ((a)<(b)?(a):(b))
+
+void dijksra(int start_node,int end_node,short graph[MAX_N][MAX_N],int local_dis[MAX_N]){
     std::priority_queue<std::pair<int,int>,std::vector<std::pair<int,int>>,std::greater<std::pair<int,int>>> pq;
     pq.push({0,start_node});
     while(!pq.empty()){
@@ -65,38 +68,39 @@ int main(int argc, char *argv[]){
     }
     // broadcast data
     MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
-    MPI_Bcast(graph,MAX_N*MAX_N,MPI_SHORT,0,MPI_COMM_WORLD);
+    // MPI_Bcast(graph,MAX_N_2,MPI_SHORT,0,MPI_COMM_WORLD);
     // divide the load
     int chunk_size = n / cluster_size;
     int start = worker_id * chunk_size;
     int end = (worker_id == cluster_size-1)? n: start + chunk_size;
 
     // init local_dis for all workers
-    short local_dis[MAX_N];
+    int local_dis[MAX_N];
     for(int i=0;i<n;i++){
         local_dis[i] = INF;
     }
     local_dis[0] = 0;
-    dijksra(start_node,end_node,graph,local_dis);
+    dijksra(start,end,graph,local_dis);
+    // global result
+    int global_dis[MAX_N];
 
     // Dijkstra
     if( worker_id == 0 ){
         // init global_dis
-        short global_dis[MAX_N];
         for(int i=0;i<n;i++){
             global_dis[i] = INF;
         }
         global_dis[0] = 0;
         // self result
         for(int i=0;i<n;i++){
-            global_dis[i] = std::min(global_dis[i],local_dis[i]);
+            global_dis[i] = min(global_dis[i],local_dis[i]);
         }
         // merge the results 
         for(int i=1;i<cluster_size;i++){
             short recv_dis[MAX_N];
             MPI_Recv(recv_dis,MAX_N,MPI_SHORT,i,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
             for(int j=0;j<n;j++){
-                global_dis[j] = std::min(global_dis[j],recv_dis[j]);
+                global_dis[j] = min(global_dis[j],recv_dis[j]);
             }
         }
     }
