@@ -66,9 +66,10 @@ int main(int argc, char *argv[]){
         }
         // read n
         fscanf(fp,"%d",&n);
-        for(int i=0;i<n;i++){
+        while(!feof(fp)){
             short from,to,weight;
-            fscanf(fp,"%hd %hd %hd",&from,&to,&weight);
+            fscanf(fp,"%hd %hd %hd\n",&from,&to,&weight);
+            printf("from = %d, to = %d, weight = %d\n",from,to,weight);
             graph[from][to] = weight;
         }
         fclose(fp);
@@ -89,14 +90,14 @@ int main(int argc, char *argv[]){
     // init dis
     if( worker_id == 0){
         // dijkstra
-        std::priority_queue<std::pair<int,int>,std::vector<std::pair<int,int>>,std::greater<std::pair<int,int>>> pq;
+        std::priority_queue<std::pair<int,int>,std::vector<std::pair<int,int> >,std::greater<std::pair<int,int> > > pq;
         pq.push({0,0});
         while(!pq.empty()){
             std::pair<int,int> pii = pq.top();
             pq.pop();
             int u = pii.S;
             int d = pii.F;
-            printf("u = %d, d = %d\n",u,d);
+            printf("pop: u = %d, d = %d, dis[u] = %d\n",u,d,dis[u]);
             if(d > dis[u]) continue;
             // distribute the work to other workers
             /*original*/
@@ -109,35 +110,58 @@ int main(int argc, char *argv[]){
                 }
             }
             */
-           
-           std::vector<Message> msgs(worker_size);
-           for(int ith_worker=0;ith_worker<worker_size;ith_worker++){
-                msgs[ith_worker] = create_message(n,worker_size,ith_worker,u);
-                MPI_Send(&msgs[ith_worker],1,MPI_MESSAGE_TYPE,ith_worker+1,0,MPI_COMM_WORLD);
-                MPI_Send(dis,MAX_N,MPI_INT,ith_worker+1,0,MPI_COMM_WORLD);
-           }
 
-            std::vector<int> recv_dis(MAX_N);
-            for(int ith_worker=0;ith_worker<worker_size;ith_worker++){
-                printf("coordinator waiting %d\n",ith_worker+1);
-                MPI_Recv(recv_dis.data(),MAX_N,MPI_INT,ith_worker+1,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-                printf("coordinator recv from %d\n",ith_worker+1);
-                for(int v=msgs[ith_worker].start_node;v<msgs[ith_worker].end_node;v++){
-                    // printf("v = %d, recv_dis = %d, dis = %d\n",v,recv_dis[v],dis[v]);
-                    if(dis[v] > recv_dis[v]){
-                        dis[v] = recv_dis[v];
-                        printf("coordinator: push %d %d\n",dis[v],v);
+            
+            std::vector<int> local_dis(MAX_N);
+            for(int i=0;i<n;i++){
+                local_dis[i] = dis[i];
+            }
+            if( n > worker_size){
+                std::vector<Message> msgs(worker_size);
+                for(int ith_worker=0;ith_worker<worker_size;ith_worker++){
+                        msgs[ith_worker].from = u;
+                        msgs[ith_worker].start_node = ith_worker * chunk_size;
+                        msgs[ith_worker].end_node = (ith_worker == worker_size-1 ? n: msgs[ith_worker].start_node + chunk_size);
+                        MPI_Send(&msgs[ith_worker],1,MPI_MESSAGE_TYPE,ith_worker+1,0,MPI_COMM_WORLD);
+                        MPI_Send(local_dis.data(),MAX_N,MPI_INT,ith_worker+1,0,MPI_COMM_WORLD);
+                }
+
+                std::vector<int> recv_dis(MAX_N);
+                for(int ith_worker=0;ith_worker<worker_size;ith_worker++){
+                    printf("coordinator waiting %d\n",ith_worker+1);
+                    MPI_Recv(recv_dis.data(),MAX_N,MPI_INT,ith_worker+1,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+                    printf("coordinator recv from %d\n",ith_worker+1);
+                    for(int v=msgs[ith_worker].start_node;v<msgs[ith_worker].end_node;v++){
+                        // printf("v = %d, recv_dis = %d, dis = %d\n",v,recv_dis[v],dis[v]);
+                        if(dis[v] > recv_dis[v]){
+                            dis[v] = recv_dis[v];
+                            printf("coordinator: push %d %d\n",dis[v],v);
+                            pq.push({dis[v],v});
+                        }
+                    }
+                }
+                printf("coordinator: pq size = %ld\n",pq.size());
+            
+                // update dis
+                // MPI_Bcast(dis,MAX_N,MPI_INT,0,MPI_COMM_WORLD);
+
+                printf("coordinator: broadcast done\n");
+            }
+            else{ // no need to distribute the work
+                printf("coordinator: no need to distribute the work\n");
+                for(int v=0;v<n;v++){
+                    printf("graph[%d][%d] = %d\n",u,v,graph[u][v]);
+                    if(graph[u][v] == 0) continue;
+                    printf("u = %d, v = %d, dis[v] = %d, dis[u] = %d, wt = %d\n",u,v,dis[v],dis[u],graph[u][v]);
+                    if(dis[v] > dis[u] + (int)graph[u][v]){
+                        dis[v] = dis[u] + (int)graph[u][v];
                         pq.push({dis[v],v});
+                        printf("coordinator: push v:%d, dis[%d] = %d\n",v,v,dis[v]);
                     }
                 }
             }
-            printf("coordinator: pq size = %ld\n",pq.size());
-           
-            // update dis
-            // MPI_Bcast(dis,MAX_N,MPI_INT,0,MPI_COMM_WORLD);
 
-            printf("coordinator: broadcast done\n");
-            
+            // MPI_Bcast(dis,MAX_N,MPI_INT,0,MPI_COMM_WORLD);
         }
         printf("coordinator: dijkstra done\n");
 
@@ -159,11 +183,13 @@ int main(int argc, char *argv[]){
 
             printf("worker %d: waiting\n",worker_id);
             MPI_Recv(&msg,1,MPI_MESSAGE_TYPE,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            MPI_Recv(local_min.data(),MAX_N,MPI_INT,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            printf("worker %d: start = %d, end = %d, from = %d\n",worker_id,msg.start_node,msg.end_node,msg.from);
             if(msg.start_node == -1 || msg.end_node == -1 || msg.from == -1){
                 break;
             }
+
+            MPI_Recv(local_min.data(),MAX_N,MPI_INT,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            printf("worker %d: start = %d, end = %d, from = %d\n",worker_id,msg.start_node,msg.end_node,msg.from);
+            
 
             int from = msg.from;
             for(int v=msg.start_node;v<msg.end_node;v++){
